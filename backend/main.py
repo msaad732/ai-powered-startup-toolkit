@@ -93,6 +93,15 @@ async def global_exception_handler(request: Request, exc: Exception):
 #  META
 # ═════════════════════════════════════════════════════════════════════════════
 
+@app.get("/", tags=["Meta"], summary="Service info")
+def root():
+    return {
+        "status": "ok",
+        "message": "Startup Toolkit backend is running.",
+        "docs": "/docs",
+        "health": "/health",
+    }
+
 @app.get("/health", tags=["Meta"], summary="Liveness probe")
 def health():
     return {
