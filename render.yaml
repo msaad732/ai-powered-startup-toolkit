@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: startup-toolkit-backend
+    env: python
+    rootDir: backend
+    pythonVersion: 3.11
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: GROQ_API_KEY
+        sync: false
