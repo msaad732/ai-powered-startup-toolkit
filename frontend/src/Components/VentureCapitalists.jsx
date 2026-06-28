@@ -27,6 +27,7 @@ import {
   Scale,
   BarChart,
 } from "lucide-react";
+import { API_BASE } from "../config/api";
 
 // ─── Navbar ───────────────────────────────────────────────────────────────────
 function Navigation() {
@@ -694,7 +695,7 @@ export default function VentureCapitalists() {
     setError(null);
 
     try {
-      const res = await fetch("http://localhost:8000/api/venture/assess", {
+      const res = await fetch(`${API_BASE}/api/venture/assess`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

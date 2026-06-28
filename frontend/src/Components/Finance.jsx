@@ -38,8 +38,8 @@ import {
   PieChart as RePieChart,
   Pie,
 } from "recharts";
+import { API_BASE } from "../config/api";
 
-const API_BASE = "http://localhost:8000";
 const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY;
 const GROQ_MODEL = "llama-3.3-70b-versatile";
 

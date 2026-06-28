@@ -32,10 +32,10 @@ import {
   Scale,
   BrainCircuit,
 } from "lucide-react";
+import { API_BASE } from "../config/api";
 
 // ─── CONFIG ──────────────────────────────────────────────────────────────────
 // All AI calls go through your FastAPI backend — Groq key stays server-side.
-const API_BASE = "http://localhost:8000";
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Lazy-loads a <script> tag once and caches the promise so repeated exports

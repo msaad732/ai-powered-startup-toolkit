@@ -26,6 +26,7 @@ import {
   BarChart,
   Download,
 } from "lucide-react";
+import { API_BASE } from "../config/api";
 
 const THEMES = [
   {
@@ -461,7 +462,7 @@ export default function App() {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch("http://localhost:8000/api/generate", {
+      const res = await fetch(`${API_BASE}/api/generate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ problem, solution, theme_id: selectedTheme }),

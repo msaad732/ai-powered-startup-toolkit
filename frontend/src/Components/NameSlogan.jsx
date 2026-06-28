@@ -30,14 +30,14 @@ import {
   Scale,
   BarChart,
 } from "lucide-react";
+import { API_BASE } from "../config/api";
 
 // --- Backend Helper (Groq is called server-side, never from the browser) ---
 // Points at the shared FastAPI backend (main.py), same server as the other modules.
-const BACKEND_URL = "http://localhost:8000";
 
 async function callBackend(path, body) {
   try {
-    const response = await fetch(`${BACKEND_URL}${path}`, {
+    const response = await fetch(`${API_BASE}${path}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),

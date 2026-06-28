@@ -18,8 +18,7 @@ import {
   Zap,
   Download,
 } from "lucide-react";
-
-const API_BASE = "http://localhost:8000";
+import { API_BASE } from "../config/api";
 
 const App = () => {
   const [step, setStep] = useState("input"); // 'input' | 'loading' | 'results'
