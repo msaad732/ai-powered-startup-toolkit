@@ -1,16 +1,4 @@
-"""
-smm.py — Social Media Management Backend
-FastAPI + Groq API
 
-Install dependencies:
-    pip install fastapi uvicorn groq pydantic python-dotenv
-
-Run:
-    uvicorn smm:app --reload --port 8000
-
-Set your key in a .env file:
-    GROQ_API_KEY=gsk_...
-"""
 
 import os
 import json
