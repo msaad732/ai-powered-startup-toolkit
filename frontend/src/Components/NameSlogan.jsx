@@ -1,0 +1,1041 @@
+import React, { useState } from "react";
+import { NavLink } from "react-router-dom";
+import jsPDF from "jspdf";
+import {
+  Wand2,
+  LayoutDashboard,
+  Target,
+  CheckCircle2,
+  AlertTriangle,
+  Globe,
+  Layers,
+  Share2,
+  Download,
+  Star,
+  ChevronRight,
+  ArrowRight,
+  ShieldCheck,
+  Palette,
+  BarChart3,
+  Copy,
+  Trash2,
+  HelpCircle,
+  Zap,
+  MenuIcon,
+  X,
+  RefreshCw,
+  BrainCircuit,
+  Presentation,
+  Brain,
+  Scale,
+  BarChart,
+} from "lucide-react";
+
+// --- Backend Helper (Groq is called server-side, never from the browser) ---
+// Points at the shared FastAPI backend (main.py), same server as the other modules.
+const BACKEND_URL = "http://localhost:8000";
+
+async function callBackend(path, body) {
+  try {
+    const response = await fetch(`${BACKEND_URL}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      throw new Error(result?.error || "Backend request failed");
+    }
+
+    return result;
+  } catch (error) {
+    console.error("Backend Error:", error);
+    return null;
+  }
+}
+
+// --- PDF Export Helper ---
+function exportBrandToPDF(brand) {
+  if (!brand) return;
+
+  const doc = new jsPDF({ unit: "pt", format: "a4" });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const margin = 50;
+  const contentWidth = pageWidth - margin * 2;
+  let y = 64;
+
+  const INDIGO = [79, 70, 229];
+  const SLATE_900 = [15, 23, 42];
+  const SLATE_600 = [71, 85, 105];
+  const SLATE_400 = [148, 163, 184];
+
+  const ensureSpace = (needed) => {
+    if (y + needed > pageHeight - margin) {
+      doc.addPage();
+      y = 64;
+    }
+  };
+
+  const addSectionTitle = (title) => {
+    ensureSpace(30);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.setTextColor(...INDIGO);
+    doc.text(title.toUpperCase(), margin, y);
+    y += 16;
+  };
+
+  const addParagraph = (text, opts = {}) => {
+    const { size = 11, color = SLATE_600, gap = 22 } = opts;
+    if (!text) return;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(size);
+    doc.setTextColor(...color);
+    const lines = doc.splitTextToSize(text, contentWidth);
+    ensureSpace(lines.length * (size * 1.3));
+    doc.text(lines, margin, y);
+    y += lines.length * (size * 1.3) + gap - 22 + 22;
+  };
+
+  // --- Header: Brand Name ---
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(30);
+  doc.setTextColor(...SLATE_900);
+  doc.text(brand.name || "Untitled Brand", margin, y);
+  y += 28;
+
+  // --- Slogan ---
+  if (brand.slogans?.[0]) {
+    doc.setFont("helvetica", "italic");
+    doc.setFontSize(14);
+    doc.setTextColor(...INDIGO);
+    doc.text(`"${brand.slogans[0]}"`, margin, y);
+    y += 28;
+  }
+
+  // Divider
+  doc.setDrawColor(226, 232, 240);
+  doc.line(margin, y, pageWidth - margin, y);
+  y += 26;
+
+  // --- Brand Story ---
+  if (brand.brandStory) {
+    addSectionTitle("Brand Story");
+    addParagraph(brand.brandStory);
+    y += 8;
+  }
+
+  // --- Personality / Traits ---
+  if (brand.traits?.length) {
+    addSectionTitle("Brand Personality");
+    addParagraph(brand.traits.join("  •  "));
+    y += 8;
+  }
+
+  // --- Voice ---
+  if (brand.voice) {
+    addSectionTitle("Brand Voice");
+    addParagraph(brand.voice);
+    y += 8;
+  }
+
+  // --- Visual Direction ---
+  if (brand.logoDirection || brand.typography) {
+    addSectionTitle("Visual Direction");
+    if (brand.logoDirection) addParagraph(`Logo: ${brand.logoDirection}`);
+    if (brand.typography) addParagraph(`Typography: ${brand.typography}`);
+    y += 8;
+  }
+
+  // --- Color Palette ---
+  if (brand.colors?.length) {
+    addSectionTitle("Color Palette");
+    ensureSpace(70);
+    let x = margin;
+    brand.colors.forEach((hex) => {
+      try {
+        doc.setFillColor(hex);
+      } catch {
+        doc.setFillColor(200, 200, 200);
+      }
+      doc.roundedRect(x, y, 48, 48, 8, 8, "F");
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8);
+      doc.setTextColor(...SLATE_400);
+      doc.text(hex, x, y + 60);
+      x += 64;
+    });
+    y += 80;
+  }
+
+  // --- Strength Score ---
+  if (brand.strengthScore !== undefined) {
+    addSectionTitle("Overall Brand Strength");
+    addParagraph(
+      `${brand.strengthScore}/100  —  ${
+        brand.status === "Strong"
+          ? "Strong Brand Potential"
+          : brand.status || ""
+      }`,
+      { color: SLATE_900, size: 13 },
+    );
+    y += 8;
+  }
+
+  // --- Improvements ---
+  if (brand.improvements?.length) {
+    addSectionTitle("Key Improvements");
+    brand.improvements.forEach((imp) => addParagraph(`•  ${imp}`, { gap: 8 }));
+    y += 8;
+  }
+
+  // --- Rationale / Justification (extra context, if present) ---
+  if (brand.justification) {
+    addSectionTitle("Naming Rationale");
+    addParagraph(brand.justification);
+  }
+
+  // Footer
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.setTextColor(...SLATE_400);
+  doc.text(
+    `Generated by AI-Powered Brand Name & Slogan Generator — ${new Date().toLocaleDateString()}`,
+    margin,
+    pageHeight - 30,
+  );
+
+  const safeName = (brand.name || "brand").replace(/[^a-z0-9]+/gi, "_");
+  doc.save(`${safeName}_Brand_Identity.pdf`);
+}
+
+// --- Main Application ---
+export default function App() {
+  const [step, setStep] = useState(1);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  // Foundation Data
+  const [formData, setFormData] = useState({
+    description: "",
+    industry: "",
+    audience: "",
+    valueProp: "",
+    tone: "Modern",
+    length: "Any",
+    style: "Descriptive",
+    language: "English",
+    culturalSensitivity: true,
+    avoidedWords: "",
+  });
+
+  // Results State
+  const [generatedNames, setGeneratedNames] = useState([]);
+  const [selectedName, setSelectedName] = useState(null);
+  const [shortlist, setShortlist] = useState([]);
+  const [finalBrand, setFinalBrand] = useState(null);
+
+  // Handlers
+  const handleInputChange = (e) => {
+    const { name, value, type, checked } = e.target;
+    setFormData((prev) => ({
+      ...prev,
+      [name]: type === "checkbox" ? checked : value,
+    }));
+  };
+
+  const generateBrands = async () => {
+    setLoading(true);
+    setError(null);
+
+    const result = await callBackend("/api/naming/generate", {
+      description: formData.description,
+      industry: formData.industry,
+      audience: formData.audience,
+      valueProp: formData.valueProp,
+      tone: formData.tone,
+      style: formData.style,
+      avoidedWords: formData.avoidedWords,
+    });
+
+    if (result && result.brands) {
+      setGeneratedNames(result.brands);
+      setStep(2);
+    } else {
+      setError("Failed to generate brand names. Please try again.");
+    }
+    setLoading(false);
+  };
+
+  const toggleShortlist = (brand) => {
+    setShortlist((prev) =>
+      prev.find((b) => b.name === brand.name)
+        ? prev.filter((b) => b.name !== brand.name)
+        : [...prev, brand],
+    );
+  };
+
+  const finalizeBrand = async (brand) => {
+    setLoading(true);
+    setSelectedName(brand);
+
+    const result = await callBackend("/api/naming/finalize", {
+      brand,
+      description: formData.description,
+      industry: formData.industry,
+    });
+
+    if (result) {
+      setFinalBrand({ ...brand, ...result });
+      setStep(4);
+    } else {
+      setError("Failed to finalize brand identity. Please try again.");
+    }
+    setLoading(false);
+  };
+
+  // --- Components ---
+
+  const Header = () => (
+    <header className="mb-10 text-center mt-4">
+      <h1 className="text-4xl font-extrabold text-slate-900 tracking-tight mb-3">
+        AI-Powered Brand Name & Slogan Generator
+      </h1>
+      <p className="text-lg text-slate-600 max-w-2xl mx-auto">
+        Create a memorable brand name and slogan aligned with your startup’s
+        mission, market, and audience.
+      </p>
+    </header>
+  );
+
+  const ProgressTracker = () => (
+    <div className="flex items-center justify-center space-x-4 mb-12">
+      {[1, 2, 3, 4].map((i) => (
+        <React.Fragment key={i}>
+          <div
+            className={`w-10 h-10 rounded-full flex items-center justify-center font-bold border-2 transition-all
+            ${
+              step === i
+                ? "bg-indigo-600 border-indigo-600 text-white shadow-lg shadow-indigo-200"
+                : step > i
+                  ? "bg-indigo-100 border-indigo-100 text-indigo-600"
+                  : "bg-white border-slate-200 text-slate-400"
+            }`}
+          >
+            {step > i ? <CheckCircle2 size={20} /> : i}
+          </div>
+          {i < 4 && (
+            <div
+              className={`h-1 w-12 rounded ${
+                step > i ? "bg-indigo-600" : "bg-slate-200"
+              }`}
+            />
+          )}
+        </React.Fragment>
+      ))}
+    </div>
+  );
+  const Navigation = () => {
+    const [isOpen, setIsOpen] = useState(false);
+
+    const navItems = [
+      { name: "Home", icon: <LayoutDashboard size={18} />, path: "/" },
+      {
+        name: "IdeaValidation",
+        icon: <BrainCircuit size={18} />,
+        path: "/ideavalidation",
+      },
+      {
+        name: "Finance&Budget",
+        icon: <BarChart3 size={18} />,
+        path: "/finance",
+      },
+      {
+        name: "Pitch Deck",
+        icon: <Presentation size={18} />,
+        path: "/pitch-ppt",
+      },
+      {
+        name: "Venture Capitalists",
+        icon: <Scale size={18} />,
+        path: "/venture-capitalists",
+      },
+      {
+        name: "Name&Slogan Generator",
+        icon: <Target size={18} />,
+        path: "/name-slogangenerator",
+      },
+      {
+        name: "Social Media Management",
+        icon: <BarChart size={18} />,
+        path: "/socialmedia",
+      },
+    ];
+
+    return (
+      <nav className="w-full bg-slate-900 border-b border-indigo-500/20 shadow-2xl sticky top-0 z-[50]">
+        {/* Main Navbar Row */}
+        <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
+          {/* Logo */}
+          <div className="flex items-center">
+            <span className="font-black text-white tracking-tighter text-xl leading-none">
+              Name&<span className="text-blue-400">Slogan</span>
+            </span>
+          </div>
+
+          {/* Desktop Links - Hidden on Mobile */}
+          <div className="hidden lg:flex items-center gap-1 bg-slate-800/50 p-1 rounded-xl border border-slate-700">
+            {navItems.map((item) => (
+              <a key={item.name} href={item.path}>
+                <button
+                  className={`flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-lg transition-all
+                    ${
+                      item.name === "Name&Slogan Generator"
+                        ? "bg-indigo-600 text-white shadow-lg shadow-indigo-500/20"
+                        : "text-slate-400 hover:text-slate-200 hover:bg-slate-700"
+                    }`}
+                >
+                  {React.cloneElement(item.icon, { size: 14 })}
+                  {item.name}
+                </button>
+              </a>
+            ))}
+          </div>
+
+          {/* Mobile Toggle - Visible on Mobile */}
+          <div className="lg:hidden flex items-center">
+            <button
+              onClick={() => setIsOpen(!isOpen)}
+              className="flex items-center gap-2 px-3 py-2 text-white bg-indigo-600 rounded-lg hover:bg-indigo-500 active:bg-indigo-700 transition-colors"
+            >
+              {isOpen ? <X size={20} /> : <MenuIcon size={20} />}
+            </button>
+          </div>
+        </div>
+
+        {/* Mobile Links List - Instant Toggle (No Animation) */}
+        {isOpen && (
+          <div className="lg:hidden w-full bg-slate-900 border-t border-slate-800">
+            <div className="flex flex-col p-4 space-y-2">
+              {navItems.map((item) => (
+                <a
+                  key={item.name}
+                  href={item.path}
+                  onClick={() => setIsOpen(false)}
+                  className={`flex items-center gap-4 px-4 py-4 rounded-xl font-bold text-sm border transition-all ${
+                    item.name === "Name&Slogan Generator"
+                      ? "bg-indigo-600 text-white border-indigo-400"
+                      : "bg-slate-800/40 text-slate-300 border-slate-700 hover:bg-slate-800 hover:text-white"
+                  }`}
+                >
+                  {item.icon}
+                  <span>{item.name}</span>
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
+      </nav>
+    );
+  };
+  return (
+    <div className="min-h-screen bg-[#F8FAFC] text-slate-900 font-sans pb-12 print:bg-white print:p-0">
+      <Navigation />
+      <div className="max-w-6xl mx-auto">
+        <Header />
+        <ProgressTracker />
+
+        {/* STEP 1: Foundation Data */}
+        {step === 1 && (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div className="lg:col-span-2 space-y-6">
+              <section className="bg-white rounded-3xl p-8 border border-slate-200 shadow-sm">
+                <div className="flex items-center gap-2 mb-6 text-indigo-600 font-semibold">
+                  <Layers size={20} />
+                  <span>1. Brand Context</span>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="col-span-full">
+                    <label className="block text-sm font-medium text-slate-700 mb-2">
+                      Startup Description
+                    </label>
+                    <textarea
+                      name="description"
+                      value={formData.description}
+                      onChange={handleInputChange}
+                      placeholder="e.g., A sustainable platform for local farmers to sell directly to city dwellers."
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all h-24 resize-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-2">
+                      Industry / Domain
+                    </label>
+                    <input
+                      type="text"
+                      name="industry"
+                      value={formData.industry}
+                      onChange={handleInputChange}
+                      placeholder="e.g., Agritech / E-commerce"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-2">
+                      Target Audience
+                    </label>
+                    <input
+                      type="text"
+                      name="audience"
+                      value={formData.audience}
+                      onChange={handleInputChange}
+                      placeholder="e.g., Gen Z foodies in urban areas"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 outline-none"
+                    />
+                  </div>
+                  <div className="col-span-full">
+                    <label className="block text-sm font-medium text-slate-700 mb-2">
+                      Value Proposition
+                    </label>
+                    <input
+                      type="text"
+                      name="valueProp"
+                      value={formData.valueProp}
+                      onChange={handleInputChange}
+                      placeholder="e.g., Freshness guaranteed within 6 hours of harvest."
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 outline-none"
+                    />
+                  </div>
+                </div>
+              </section>
+
+              <section className="bg-white rounded-3xl p-8 border border-slate-200 shadow-sm">
+                <div className="flex items-center gap-2 mb-6 text-indigo-600 font-semibold">
+                  <Zap size={20} />
+                  <span>2. Style & Constraints</span>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-2">
+                      Tone Preference
+                    </label>
+                    <select
+                      name="tone"
+                      value={formData.tone}
+                      onChange={handleInputChange}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5"
+                    >
+                      {[
+                        "Professional",
+                        "Modern",
+                        "Playful",
+                        "Premium",
+                        "Disruptive",
+                      ].map((t) => (
+                        <option key={t} value={t}>
+                          {t}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-2">
+                      Name Style
+                    </label>
+                    <select
+                      name="style"
+                      value={formData.style}
+                      onChange={handleInputChange}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5"
+                    >
+                      {["Descriptive", "Abstract", "Invented", "Compound"].map(
+                        (s) => (
+                          <option key={s} value={s}>
+                            {s}
+                          </option>
+                        ),
+                      )}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-2">
+                      Language
+                    </label>
+                    <select
+                      name="language"
+                      value={formData.language}
+                      onChange={handleInputChange}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5"
+                    >
+                      {["English", "Hybrid", "Latin-Roots"].map((l) => (
+                        <option key={l} value={l}>
+                          {l}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex items-center space-x-3 pt-8">
+                    <input
+                      type="checkbox"
+                      name="culturalSensitivity"
+                      checked={formData.culturalSensitivity}
+                      onChange={handleInputChange}
+                      className="w-5 h-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                    />
+                    <label className="text-sm font-medium text-slate-700">
+                      Cultural Sensitivity Toggle
+                    </label>
+                    <HelpCircle
+                      size={16}
+                      className="text-slate-400 cursor-help"
+                    />
+                  </div>
+                </div>
+              </section>
+            </div>
+
+            <aside className="space-y-6">
+              <div className="bg-indigo-900 text-white rounded-3xl p-8 shadow-xl">
+                <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
+                  <ShieldCheck size={20} />
+                  Academic Strength
+                </h3>
+                <p className="text-indigo-200 text-sm leading-relaxed mb-6">
+                  This module demonstrates constraint-based AI generation. It
+                  uses context-aware logic to ensure your brand identity is
+                  strategically grounded, not just creative.
+                </p>
+                <ul className="space-y-3 text-sm">
+                  <li className="flex gap-2">
+                    <div className="w-1.5 h-1.5 rounded-full bg-indigo-400 mt-1.5" />
+                    <span>Cross-module data reuse</span>
+                  </li>
+                  <li className="flex gap-2">
+                    <div className="w-1.5 h-1.5 rounded-full bg-indigo-400 mt-1.5" />
+                    <span>Marketing principle alignment</span>
+                  </li>
+                </ul>
+              </div>
+              <button
+                onClick={generateBrands}
+                disabled={loading || !formData.description}
+                className={`w-full py-4 rounded-2xl flex items-center justify-center gap-2 text-lg font-bold transition-all
+                  ${
+                    loading
+                      ? "bg-slate-200 text-slate-500 cursor-not-allowed"
+                      : "bg-indigo-600 text-white hover:bg-indigo-700 shadow-lg shadow-indigo-200"
+                  }`}
+              >
+                {loading ? <RefreshCw className="animate-spin" /> : <Wand2 />}
+                {loading ? "Analyzing Context..." : "Generate Brand Identity"}
+              </button>
+              {error && (
+                <p className="text-red-500 text-sm text-center">{error}</p>
+              )}
+            </aside>
+          </div>
+        )}
+
+        {/* STEP 2: Generation Results */}
+        {step === 2 && (
+          <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-500">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <h2 className="text-2xl font-bold text-slate-900">
+                  Curated Brand Concepts
+                </h2>
+                <p className="text-slate-500">
+                  Selected options based on your professional constraints.
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setStep(1)}
+                  className="px-6 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 transition-colors"
+                >
+                  Adjust Filters
+                </button>
+                <button
+                  onClick={() => setStep(3)}
+                  disabled={shortlist.length < 2}
+                  className={`px-6 py-2 rounded-xl font-bold transition-all 
+                    ${
+                      shortlist.length < 2
+                        ? "bg-slate-100 text-slate-400"
+                        : "bg-indigo-600 text-white"
+                    }`}
+                >
+                  Compare ({shortlist.length})
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {generatedNames.map((brand, idx) => (
+                <div
+                  key={idx}
+                  className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden group"
+                >
+                  <div className="absolute top-0 right-0 p-4">
+                    <button
+                      onClick={() => toggleShortlist(brand)}
+                      className={`p-2 rounded-full transition-colors ${
+                        shortlist.find((b) => b.name === brand.name)
+                          ? "text-amber-500 bg-amber-50"
+                          : "text-slate-300 hover:text-slate-400"
+                      }`}
+                    >
+                      <Star
+                        fill={
+                          shortlist.find((b) => b.name === brand.name)
+                            ? "currentColor"
+                            : "none"
+                        }
+                        size={20}
+                      />
+                    </button>
+                  </div>
+
+                  <div className="mb-4">
+                    <span className="text-[10px] uppercase tracking-widest font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded">
+                      {brand.style}
+                    </span>
+                    <h3 className="text-2xl font-bold mt-2 text-slate-900">
+                      {brand.name}
+                    </h3>
+                    <p className="text-sm text-slate-400 italic">
+                      "{brand.pronunciation}"
+                    </p>
+                  </div>
+
+                  <p className="text-sm text-slate-600 mb-6 line-clamp-2">
+                    {brand.rationale}
+                  </p>
+
+                  <div className="space-y-2 mb-6">
+                    <p className="text-xs font-bold text-slate-400 uppercase tracking-tighter">
+                      Top Slogan
+                    </p>
+                    <p className="text-sm font-medium text-indigo-900 border-l-2 border-indigo-200 pl-3">
+                      {brand.slogans[0]}
+                    </p>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-4 border-t border-slate-50">
+                    <div className="flex items-center gap-1.5">
+                      <div className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded">
+                        Fit Score: {brand.brandFitScore}/10
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => finalizeBrand(brand)}
+                      className="text-indigo-600 hover:text-indigo-800 font-bold text-sm flex items-center gap-1"
+                    >
+                      Select <ChevronRight size={16} />
+                    </button>
+                  </div>
+
+                  {brand.culturalFlags && (
+                    <div className="mt-4 pt-4 border-t border-slate-100 flex items-center gap-2 text-amber-600">
+                      <AlertTriangle size={14} />
+                      <span className="text-[10px] font-medium uppercase tracking-wide">
+                        Cultural Screening: {brand.culturalFlags[0]}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* STEP 3: Comparison Tool */}
+        {step === 3 && (
+          <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <h2 className="text-2xl font-bold mb-8 text-center">
+              Brand Comparison Dashboard
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
+              {shortlist.map((brand, idx) => (
+                <div
+                  key={idx}
+                  className="bg-white rounded-3xl overflow-hidden border border-slate-200 shadow-sm flex flex-col"
+                >
+                  <div className="p-8 bg-slate-900 text-white text-center">
+                    <h3 className="text-3xl font-bold mb-2">{brand.name}</h3>
+                    <p className="text-slate-400 text-sm">{brand.slogans[0]}</p>
+                  </div>
+                  <div className="p-6 space-y-6 flex-grow">
+                    <div className="space-y-4">
+                      <div>
+                        <p className="text-xs font-bold text-slate-400 uppercase mb-2">
+                          Meaning & Justification
+                        </p>
+                        <p className="text-sm text-slate-600 leading-relaxed">
+                          {brand.justification}
+                        </p>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="bg-slate-50 p-3 rounded-xl">
+                          <p className="text-[10px] text-slate-400 uppercase font-bold mb-1">
+                            Memorability
+                          </p>
+                          <p className="text-lg font-bold text-indigo-600">
+                            8.4/10
+                          </p>
+                        </div>
+                        <div className="bg-slate-50 p-3 rounded-xl">
+                          <p className="text-[10px] text-slate-400 uppercase font-bold mb-1">
+                            Domain Likelihood
+                          </p>
+                          <p
+                            className={`text-lg font-bold ${
+                              brand.domainLikelihood === "High"
+                                ? "text-emerald-600"
+                                : "text-amber-500"
+                            }`}
+                          >
+                            {brand.domainLikelihood}
+                          </p>
+                        </div>
+                      </div>
+                      <div>
+                        <p className="text-xs font-bold text-slate-400 uppercase mb-2">
+                          Social Handles
+                        </p>
+                        <div className="flex gap-2">
+                          <div className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center text-[10px] font-bold text-slate-400">
+                            FB
+                          </div>
+                          <div className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center text-[10px] font-bold text-slate-400">
+                            X
+                          </div>
+                          <div className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center text-[10px] font-bold text-slate-400">
+                            IG
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="p-4 border-t border-slate-100">
+                    <button
+                      onClick={() => finalizeBrand(brand)}
+                      className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-colors"
+                    >
+                      Choose this Brand
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="text-center">
+              <button
+                onClick={() => setStep(2)}
+                className="text-slate-500 hover:text-slate-700 font-medium"
+              >
+                Back to Shortlist
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* STEP 4: Final Summary & Recommendations */}
+        {step === 4 && finalBrand && (
+          <div className="space-y-8 animate-in zoom-in-95 duration-500">
+            <div className="bg-white rounded-[40px] p-8 md:p-12 border border-slate-200 shadow-xl relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-50 rounded-full -mr-32 -mt-32 blur-3xl opacity-50" />
+
+              <div className="relative grid grid-cols-1 lg:grid-cols-12 gap-12">
+                {/* Left Side: Brand Identity */}
+                <div className="lg:col-span-7 space-y-10">
+                  <section>
+                    <div className="inline-block px-3 py-1 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-bold uppercase tracking-widest mb-4">
+                      Final Selected Brand
+                    </div>
+                    <h2 className="text-6xl font-black text-slate-900 mb-4">
+                      {finalBrand.name}
+                    </h2>
+                    <p className="text-2xl font-light text-indigo-600 mb-6 italic">
+                      "{finalBrand.slogans[0]}"
+                    </p>
+                    <p className="text-slate-600 leading-relaxed text-lg max-w-xl">
+                      {finalBrand.brandStory}
+                    </p>
+                  </section>
+
+                  <section className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <div className="space-y-4">
+                      <div className="flex items-center gap-2 text-indigo-600 font-bold">
+                        <Palette size={20} />
+                        <h3>Visual Direction</h3>
+                      </div>
+                      <div className="space-y-3">
+                        <div className="flex items-center gap-3">
+                          <div className="flex -space-x-2">
+                            {finalBrand.colors.map((c, i) => (
+                              <div
+                                key={i}
+                                className="w-8 h-8 rounded-full border-2 border-white shadow-sm"
+                                style={{ backgroundColor: c }}
+                              />
+                            ))}
+                          </div>
+                          <span className="text-xs text-slate-500 font-mono">
+                            {finalBrand.colors.join(", ")}
+                          </span>
+                        </div>
+                        <p className="text-sm text-slate-600">
+                          <span className="font-bold">Logo:</span>{" "}
+                          {finalBrand.logoDirection}
+                        </p>
+                        <p className="text-sm text-slate-600">
+                          <span className="font-bold">Typography:</span>{" "}
+                          {finalBrand.typography}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="space-y-4">
+                      <div className="flex items-center gap-2 text-indigo-600 font-bold">
+                        <Share2 size={20} />
+                        <h3>Brand Personality</h3>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {finalBrand.traits.map((trait, i) => (
+                          <span
+                            key={i}
+                            className="px-3 py-1 bg-slate-100 rounded-lg text-xs font-medium text-slate-600"
+                          >
+                            {trait}
+                          </span>
+                        ))}
+                      </div>
+                      <p className="text-sm text-slate-600 italic">
+                        "Voice: {finalBrand.voice}"
+                      </p>
+                    </div>
+                  </section>
+                </div>
+
+                {/* Right Side: Score & Actions */}
+                <div className="lg:col-span-5 space-y-6">
+                  <div className="bg-slate-50 rounded-3xl p-8 border border-slate-100 text-center">
+                    <div className="inline-flex flex-col items-center mb-6">
+                      <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">
+                        Overall Brand Strength
+                      </div>
+                      <div className="relative flex items-center justify-center">
+                        <svg className="w-32 h-32 transform -rotate-90">
+                          <circle
+                            cx="64"
+                            cy="64"
+                            r="58"
+                            stroke="currentColor"
+                            strokeWidth="8"
+                            fill="transparent"
+                            className="text-slate-200"
+                          />
+                          <circle
+                            cx="64"
+                            cy="64"
+                            r="58"
+                            stroke="currentColor"
+                            strokeWidth="8"
+                            fill="transparent"
+                            strokeDasharray={364}
+                            strokeDashoffset={
+                              364 - (364 * finalBrand.strengthScore) / 100
+                            }
+                            className="text-indigo-600"
+                          />
+                        </svg>
+                        <div className="absolute text-3xl font-black text-slate-900">
+                          {finalBrand.strengthScore}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div
+                      className={`py-2 px-4 rounded-full inline-block text-xs font-bold mb-6 ${
+                        finalBrand.status === "Strong"
+                          ? "bg-emerald-100 text-emerald-700"
+                          : "bg-amber-100 text-amber-700"
+                      }`}
+                    >
+                      {finalBrand.status === "Strong"
+                        ? "✅ Strong Brand Potential"
+                        : "⚠ Needs Refinement"}
+                    </div>
+
+                    <div className="text-left space-y-4">
+                      <p className="text-xs font-bold text-slate-400 uppercase">
+                        Key Improvements
+                      </p>
+                      <ul className="space-y-2">
+                        {finalBrand.improvements.map((imp, i) => (
+                          <li
+                            key={i}
+                            className="flex gap-2 text-sm text-slate-600"
+                          >
+                            <div className="w-1.5 h-1.5 rounded-full bg-indigo-300 mt-1.5 flex-shrink-0" />
+                            <span>{imp}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <button
+                      onClick={() => exportBrandToPDF(finalBrand)}
+                      className="flex items-center justify-center gap-2 py-4 bg-white border border-slate-200 rounded-2xl font-bold text-slate-700 hover:bg-slate-50 transition-colors shadow-sm"
+                    >
+                      <Download size={18} /> Export PDF
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-center gap-6 pb-20">
+              <button
+                onClick={() => setStep(1)}
+                className="text-slate-400 hover:text-indigo-600 flex items-center gap-2 text-sm font-medium transition-colors"
+              >
+                <RefreshCw size={16} /> Start Over
+              </button>
+              <div className="h-4 w-px bg-slate-200" />
+              <button className="text-slate-400 hover:text-indigo-600 flex items-center gap-2 text-sm font-medium transition-colors">
+                <Copy size={16} /> Copy Brand Summary
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Loading Overlay */}
+      {loading && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-6">
+          <div className="bg-white rounded-3xl p-10 max-w-sm w-full shadow-2xl text-center space-y-6">
+            <div className="relative w-20 h-20 mx-auto">
+              <div className="absolute inset-0 border-4 border-indigo-100 rounded-full" />
+              <div className="absolute inset-0 border-4 border-t-indigo-600 rounded-full animate-spin" />
+              <div className="absolute inset-0 flex items-center justify-center text-indigo-600">
+                <Zap size={32} />
+              </div>
+            </div>
+            <div>
+              <h3 className="text-xl font-bold text-slate-900">AI Thinking</h3>
+              <p className="text-slate-500 mt-2">
+                Processing market trends and linguistic patterns for your
+                brand...
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
